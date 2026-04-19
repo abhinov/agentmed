@@ -1,0 +1,7 @@
+{
+  "schema": {
+    "prediction": "string",
+    "confidence_score": "number",
+    "reasoning": "string"
+  }
+}

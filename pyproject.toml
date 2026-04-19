@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "multimodal-bench"
+version = "0.1.0"
+description = "Enterprise-grade, general-purpose vision evaluation package."
+authors = [{ name = "Author" }]
+dependencies = []
+
+[project.scripts]
+bench-run = "multimodal_bench.pipeline:main"
+bench-grade = "multimodal_bench.grader:main"
+bench-sample = "multimodal_bench.sampler:main"
