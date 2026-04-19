@@ -1,4 +1,11 @@
+# Security
 .env
-data/
+
+# Large Data & Outputs
+*.csv
+*.jsonl
+data/images/
+
+# Python Caches
 __pycache__/
-.venv
+.venv/

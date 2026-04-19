@@ -7,7 +7,7 @@ name = "multimodal-bench"
 version = "0.1.0"
 description = "Enterprise-grade, general-purpose vision evaluation package."
 authors = [{ name = "Author" }]
-dependencies = []
+dependencies = ["openai", "pandas", "python-dotenv"]
 
 [project.scripts]
 bench-run = "multimodal_bench.pipeline:main"
