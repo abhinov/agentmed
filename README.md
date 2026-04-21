@@ -68,3 +68,11 @@ Once the AI has finished answering, you can grade it! Simply run:
 make grade
 ```
 This command will compare all of the AI's answers to your answer key and give you a final accuracy score for your dataset.
+
+## 📏 The Five Enterprise Evaluation Parameters
+
+- **1. Clinical Accuracy:** Exact match percentage against the 0-4 clinical grading scale.
+- **2. False Positive Rate (The "Overthinking Penalty"):** The rate at which the model hallucinates disease on perfectly healthy retinas.
+- **3. Unit Economics:** The exact API cost to evaluate 1,000 images using Asynchronous Batching.
+- **4. Architecture Resilience:** The accuracy delta between Zero-Shot prompting and Calibrated Multi-Shot prompting.
+- **5. Visual Grounding:** The model's sensitivity to payload compression (e.g., 57KB vs 1024px fidelity).

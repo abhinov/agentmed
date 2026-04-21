@@ -9,3 +9,7 @@ data/images/
 # Python Caches
 __pycache__/
 .venv/
+
+# Ignore debug images and system files
+*.jpg
+.DS_Store

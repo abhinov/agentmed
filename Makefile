@@ -7,7 +7,7 @@ run-openai:
 	bench-run --provider openai
 
 grade:
-	bench-grade
+	python3 src/multimodal_bench/grader.py
 
 prepare-batch:
 	python3 src/multimodal_bench/batch_openai.py prepare

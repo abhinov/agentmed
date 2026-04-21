@@ -1,4 +1,6 @@
 import os
+import io
+import re
 import json
 import base64
 import argparse
@@ -6,6 +8,7 @@ import pandas as pd
 from pathlib import Path
 from dotenv import load_dotenv
 from openai import OpenAI
+from PIL import Image
 
 load_dotenv()
 
@@ -17,8 +20,19 @@ class OpenAIBatchEvaluator:
         self.output_csv = "output.csv"
         
     def _encode_image(self, image_path):
-        with open(image_path, "rb") as image_file:
-            return base64.b64encode(image_file.read()).decode('utf-8')
+        MAX_DIMENSION = 1024
+        COMPRESSION_QUALITY = 85
+        
+        with Image.open(image_path) as img:
+            if img.mode != "RGB":
+                img = img.convert("RGB")
+                
+            img.thumbnail((MAX_DIMENSION, MAX_DIMENSION), Image.Resampling.LANCZOS)
+            
+            buffer = io.BytesIO()
+            img.save(buffer, format="JPEG", optimize=True, quality=COMPRESSION_QUALITY)
+            
+            return base64.b64encode(buffer.getvalue()).decode('utf-8')
             
     def prepare_batch(self):
         """Iterates over images, base64 encodes them, and generates batch_input.jsonl"""
@@ -28,6 +42,28 @@ class OpenAIBatchEvaluator:
             self.images_dir.mkdir(parents=True, exist_ok=True)
             print("Please add your images to this directory.")
             return False
+
+        # 1. Load the Configuration
+        config_path = Path("eval_config.json")
+        if not config_path.exists():
+            print(f"Error: {config_path} not found.")
+            return False
+
+        with open(config_path, "r") as f:
+            config = json.load(f)
+            schema_dict = config.get("schema", {})
+
+        # 2. Construct the System Prompt
+        system_prompt = f"""You are an expert ophthalmologist diagnosing Diabetic Retinopathy (DR). 
+You must strictly apply the following 0-4 scale:
+- 0 (No DR): Absolutely normal retina. No microaneurysms or hemorrhages.
+- 1 (Mild): Microaneurysms only.
+- 2 (Moderate): More than just microaneurysms, but less than severe. Minor dot-blot hemorrhages.
+- 3 (Severe): Any of the following - >20 intraretinal hemorrhages in each of 4 quadrants, definite venous beading in 2+ quadrants, or prominent IRMA in 1+ quadrants.
+- 4 (Proliferative): One or both of the following - neovascularization or vitreous/preretinal hemorrhage.
+
+Do not over-diagnose lighting artifacts as hemorrhages.
+You must respond in strictly valid JSON matching this exact schema: {json.dumps(config['schema'])}."""
 
         image_files = [p for p in self.images_dir.glob("*.*") if p.suffix.lower() in ['.png', '.jpg', '.jpeg', '.webp']]
         
@@ -46,7 +82,12 @@ class OpenAIBatchEvaluator:
                     "url": "/v1/chat/completions",
                     "body": {
                         "model": "gpt-4o",  # default model
+                        "response_format": { "type": "json_object" },
                         "messages": [
+                            {
+                                "role": "system",
+                                "content": system_prompt
+                            },
                             {
                                 "role": "user",
                                 "content": [
@@ -122,14 +163,34 @@ class OpenAIBatchEvaluator:
                 custom_id = data.get('custom_id', '')
                 image_filename = custom_id.replace('request-', '')
                 
+                prediction = "Error"
+                confidence_score = "0.0"
+                reasoning = "Failed to parse."
+                
                 try:
                     response_content = data['response']['body']['choices'][0]['message']['content']
-                except (KeyError, TypeError) as e:
-                    response_content = "Error parsing response"
+                    
+                    # Extract JSON using Regex
+                    match = re.search(r'```(?:json)?\s*(.*?)\s*```', response_content, re.DOTALL)
+                    if match:
+                        clean_content = match.group(1).strip()
+                    else:
+                        # Fallback if no tags are present (raw JSON)
+                        clean_content = response_content.strip()
+                    
+                    parsed_json = json.loads(clean_content)
+                    prediction = parsed_json.get('prediction', "Error")
+                    confidence_score = parsed_json.get('confidence_score', "0.0")
+                    reasoning = parsed_json.get('reasoning', "Failed to parse.")
+                    
+                except Exception as e:
+                    print(f"Warning: Failed to parse response for {image_filename}. Error: {e}")
                     
                 results.append({
                     "image_filename": image_filename,
-                    "prediction": response_content
+                    "prediction": prediction,
+                    "confidence_score": confidence_score,
+                    "reasoning": reasoning
                 })
                 
             df = pd.DataFrame(results)

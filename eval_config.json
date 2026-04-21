@@ -1,7 +1,12 @@
 {
-  "schema": {
-    "prediction": "string",
-    "confidence_score": "number",
-    "reasoning": "string"
-  }
+    "openai_model": "gpt-5.4-nano",
+    "image_processing": {
+        "max_dimension": 1024,
+        "jpeg_quality": 90
+    },
+    "schema": {
+        "prediction": "number",
+        "confidence_score": "number",
+        "reasoning": "string"
+    }
 }
