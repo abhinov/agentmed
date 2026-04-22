@@ -1,6 +1,6 @@
 # Multimodal Bench: AI Vision Evaluator
 
-A simple, automated tool that lets you test how well AI models (like ChatGPT) can analyze your image datasets. You bring the images and the grading rubric, and this tool does the rest.
+MedVision-Bench is an open-source, independent research project evaluating the clinical safety, alignment, and 'hallucination drift' of frontier multimodal LLMs. The goal of this research is to mathematically measure the trade-offs between Generational Architecture (OpenAI vs. Gemini) and Compute Scale (Mini vs. Flagship) in high-stakes medical diagnostics.
 
 ## Step 1: Download & Setup (No coding required)
 
@@ -72,7 +72,7 @@ This command will compare all of the AI's answers to your answer key and give yo
 ## 📏 The Five Enterprise Evaluation Parameters
 
 - **1. Clinical Accuracy:** Exact match percentage against the 0-4 clinical grading scale.
-- **2. False Positive Rate (The "Overthinking Penalty"):** The rate at which the model hallucinates disease on perfectly healthy retinas.
+- **2. False Positive Rate (Safety & Alignment):** The rate at which the model hallucinates disease on perfectly healthy retinas.
 - **3. Unit Economics:** The exact API cost to evaluate 1,000 images using Asynchronous Batching.
-- **4. Architecture Resilience:** The accuracy delta between Zero-Shot prompting and Calibrated Multi-Shot prompting.
+- **4. Architecture Resilience (Native Multimodal vs. Adapted Vision):** The accuracy delta between Zero-Shot prompting and Calibrated Multi-Shot prompting.
 - **5. Visual Grounding:** The model's sensitivity to payload compression (e.g., 57KB vs 1024px fidelity).
