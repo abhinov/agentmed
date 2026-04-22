@@ -6,7 +6,7 @@
     },
     "schema": {
         "prediction": "number",
-        "confidence_score": "number",
+        "confidence_score": "Number between 0 and 100 representing diagnostic certainty.",
         "reasoning": "string"
     }
 }

@@ -31,6 +31,8 @@ def main():
         
     total_samples = len(merged_df)
     
+    HITL_THRESHOLD = 85
+    
     # Load config for model name
     model_name = "unknown"
     if CONFIG_PATH.exists():
@@ -70,6 +72,15 @@ def main():
     
     fpr = (total_fps / total_true_0s * 100) if total_true_0s > 0 else 0.0
     
+    # Calculate HITL Triage Rate
+    if "confidence_score" in merged_df.columns:
+        merged_df["conf_num"] = pd.to_numeric(merged_df["confidence_score"], errors='coerce')
+        human_review_required = (merged_df["conf_num"] < HITL_THRESHOLD).sum()
+    else:
+        human_review_required = 0
+    
+    hitl_triage_rate = (human_review_required / total_samples * 100) if total_samples > 0 else 0.0
+    
     print("-" * 41)
     print("MEDVISION-BENCH: RUN REPORT")
     print("-" * 41)
@@ -79,6 +90,7 @@ def main():
     print(f"1. Clinical Accuracy: {accuracy:.2f}%")
     print(f"2. False Positive Rate (Overthinking): {fpr:.2f}%")
     print(f"3. Est. Batch Cost per 1k Images: ${cost_per_1k:.2f}")
+    print(f"5. HITL Triage Rate (<85% Conf): {hitl_triage_rate:.2f}%")
     print("-" * 41)
 
 if __name__ == "__main__":

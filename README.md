@@ -6,8 +6,8 @@ MedVision-Bench is an open-source, independent research project evaluating the c
 
 1. First, download the tool to your computer:
    ```bash
-   git clone https://github.com/abhinov/multimodal-bench.git
-   cd multimodal-bench
+   git clone https://github.com/abhinov/medvision-bench.git
+   cd medvision-bench
    ```
 
 2. Install the required tools:
