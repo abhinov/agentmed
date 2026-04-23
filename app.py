@@ -175,13 +175,12 @@ with gr.Blocks(title="MedVision-Bench Playground", theme=gr.themes.Soft(), css=c
             submit_btn = gr.Button("Run Inference", variant="primary")
             
         with gr.Column():
+            status_banner_output = gr.HTML('<div class="status-banner">⚪ Waiting for input...</div>')
             agentic_flow_output = gr.HTML('<div class="agentic-flow">⚪ Waiting for input...</div>')
             
             with gr.Group():
                 clinical_output = gr.HTML('<div class="clinical-findings">⚪ Waiting for input...</div>')
                 lesion_output = gr.JSON(label="Raw Extraction: lesion_coordinates", value={})
-                
-            status_banner_output = gr.HTML('<div class="status-banner">⚪ Waiting for input...</div>')
 
     # Wire up the logic
     submit_btn.click(
