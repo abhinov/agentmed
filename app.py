@@ -44,7 +44,10 @@ def call_model(client, model_name, image_b64, prompt):
 
 def process_image(image, model):
     if image is None:
-        return "N/A", "N/A", "### Status: ⚪ Waiting for input...", "{}"
+        empty_flow = '<div class="agentic-flow">⚪ Waiting for input...</div>'
+        empty_clinical = '<div class="clinical-findings">⚪ Waiting for input...</div>'
+        empty_banner = '<div class="status-banner">⚪ Waiting for input...</div>'
+        return empty_flow, empty_clinical, {}, empty_banner
     
     openai_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
     nvidia_client = OpenAI(base_url="https://integrate.api.nvidia.com/v1", api_key=os.environ.get("NVIDIA_API_KEY", ""))
@@ -103,26 +106,55 @@ Return ONLY valid JSON."""
     confidence_score = final_json.get("confidence_score", "N/A")
     lesion_coordinates = final_json.get("lesion_coordinates", [])
     
-    status_banner = ""
-    try:
-        conf = int(confidence_score)
-        if conf >= 85:
-            status_banner = "### Status: 🟢 Auto-Triage Approved"
-        else:
-            status_banner = "### Status: 🔴 Human-in-the-Loop Review Required"
-    except:
-        status_banner = "### Status: 🔴 Status Unknown"
-        
+    # 1. Agentic Flow State
+    agentic_flow_html = ""
     if is_multi_agent:
         maker_json = extract_json(maker_response_text)
         maker_grade = str(maker_json.get("predicted_grade", "N/A"))
         if maker_grade != predicted_grade:
-            status_banner += "\n\n🟡 Reviewer Overrode Maker"
-            
-    return predicted_grade, str(confidence_score), status_banner, json.dumps({"lesion_coordinates": lesion_coordinates}, indent=2)
+            agentic_flow_html = f'<div class="agentic-flow override">🟡 Multi-Agent Flow: Reviewer Overrode Maker (Maker: {maker_grade} &rarr; Reviewer: {predicted_grade})</div>'
+        else:
+            agentic_flow_html = f'<div class="agentic-flow">🟢 Multi-Agent Flow: Consensus Reached</div>'
+    else:
+         agentic_flow_html = f'<div class="agentic-flow">🔵 Single-Shot Inference</div>'
+
+    # 2. Clinical Summary HTML
+    clinical_summary_html = f"""
+    <div class="clinical-findings">
+        <div class="clinical-grade">Predicted Clinical Grade: {predicted_grade}</div>
+        <div class="confidence">Confidence Score: {confidence_score}%</div>
+    </div>
+    """
+
+    # 3. Python dictionary for JSON
+    lesion_dict = {"lesion_coordinates": lesion_coordinates}
+
+    # 4. Status Banner
+    status_banner_html = ""
+    try:
+        conf = int(confidence_score)
+        if conf >= 85:
+            status_banner_html = '<div class="status-banner approved">🟢 Auto-Triage Approved</div>'
+        else:
+            status_banner_html = '<div class="status-banner review">🔴 Human-in-the-Loop Review Required</div>'
+    except:
+        status_banner_html = '<div class="status-banner review">🔴 Status Unknown</div>'
+
+    return agentic_flow_html, clinical_summary_html, lesion_dict, status_banner_html
+
+css = """
+.status-banner { padding: 15px; border-radius: 8px; font-weight: bold; font-size: 16px; margin-top: 10px; }
+.approved { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+.review { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+.clinical-findings { padding: 15px; background-color: #f8f9fa; border-radius: 8px; border: 1px solid #dee2e6; margin-bottom: 10px; }
+.clinical-grade { font-size: 24px; font-weight: bold; color: #007bff; }
+.confidence { font-size: 18px; color: #495057; }
+.agentic-flow { padding: 10px; background-color: #e2e3e5; border-radius: 8px; font-weight: bold; margin-bottom: 15px; }
+.override { background-color: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
+"""
 
 # Build the Gradio UI
-with gr.Blocks(title="MedVision-Bench Playground", theme=gr.themes.Soft()) as demo:
+with gr.Blocks(title="MedVision-Bench Playground", theme=gr.themes.Soft(), css=css) as demo:
     gr.Markdown("# MedVision-Bench: Single-Image Playground")
     gr.Markdown("Upload an image and select a model to test the diagnostic pipeline and Human-in-the-Loop confidence routing.")
     
@@ -143,19 +175,19 @@ with gr.Blocks(title="MedVision-Bench Playground", theme=gr.themes.Soft()) as de
             submit_btn = gr.Button("Run Inference", variant="primary")
             
         with gr.Column():
-            status_output = gr.Markdown("### Status: ⚪ Waiting for input...")
+            agentic_flow_output = gr.HTML('<div class="agentic-flow">⚪ Waiting for input...</div>')
             
-            with gr.Row():
-                grade_output = gr.Textbox(label="Predicted Clinical Grade (0-4)")
-                confidence_output = gr.Textbox(label="Confidence Score (%)")
+            with gr.Group():
+                clinical_output = gr.HTML('<div class="clinical-findings">⚪ Waiting for input...</div>')
+                lesion_output = gr.JSON(label="Raw Extraction: lesion_coordinates", value={})
                 
-            lesion_output = gr.Textbox(label="Raw Extraction: lesion_coordinates")
+            status_banner_output = gr.HTML('<div class="status-banner">⚪ Waiting for input...</div>')
 
     # Wire up the logic
     submit_btn.click(
         fn=process_image,
         inputs=[image_input, model_dropdown],
-        outputs=[grade_output, confidence_output, status_output, lesion_output]
+        outputs=[agentic_flow_output, clinical_output, lesion_output, status_banner_output]
     )
 
 if __name__ == "__main__":
