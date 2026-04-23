@@ -4,7 +4,8 @@
 
 While the industry evaluates text-based clinical chat (e.g., OpenAI's HealthBench), MedVision-Bench serves as the **multimodal equivalent**—evaluating spatial explainability, AI hallucination safety, and Multi-Agent consensus on high-stakes medical scans (like Diabetic Retinopathy).
 
-You can also play with the live Multi-Agent debate UI here: https://huggingface.co/spaces/beabhinov/medvision-bench-demo
+You can also play with the live Multi-Agent here: https://huggingface.co/spaces/beabhinov/medvision-bench-demo
+
 ---
 
 ## 🩺 For Clinical Staff & Doctors: What This Means for You
