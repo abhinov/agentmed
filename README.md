@@ -4,6 +4,8 @@
 
 While the industry evaluates text-based clinical chat (e.g., OpenAI's HealthBench), MedVision-Bench serves as the **multimodal equivalent**—evaluating spatial explainability, AI hallucination safety, and Multi-Agent consensus on high-stakes medical scans (like Diabetic Retinopathy).
 
+You can also play with the live Multi-Agent here: https://huggingface.co/spaces/beabhinov/medvision-bench-demo
+
 ---
 
 ## 🩺 For Clinical Staff & Doctors: What This Means for You
@@ -18,7 +20,7 @@ Here is how it works:
 
 ---
 
-## 🚀 For AI Recruiters & Engineering Teams: Architecture & SEO
+## 🚀 For AI Native Teams: Agent Architecture
 *Keywords: Multi-Agent Orchestration, Agentic Workflows, AI Safety, Multimodal LLM Evals, JSON Schema Enforcement, Human-in-the-Loop (HITL), Hybrid Cloud Routing, Prompt Engineering, NVIDIA NIM.*
 
 MedVision-Bench is architected to solve the three major bottlenecks in enterprise AI deployment:
