@@ -18,7 +18,7 @@ Here is how it works:
 
 ---
 
-## 🚀 For AI Native Teams: Architecture & SEO
+## 🚀 For AI Native Teams: Agent Architecture
 *Keywords: Multi-Agent Orchestration, Agentic Workflows, AI Safety, Multimodal LLM Evals, JSON Schema Enforcement, Human-in-the-Loop (HITL), Hybrid Cloud Routing, Prompt Engineering, NVIDIA NIM.*
 
 MedVision-Bench is architected to solve the three major bottlenecks in enterprise AI deployment:
