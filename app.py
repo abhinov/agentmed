@@ -44,10 +44,9 @@ def call_model(client, model_name, image_b64, prompt):
 
 def process_image(image, model):
     if image is None:
-        empty_flow = '<div class="agentic-flow">⚪ Waiting for input...</div>'
         empty_clinical = '<div class="clinical-findings">⚪ Waiting for input...</div>'
         empty_banner = '<div class="status-banner">⚪ Waiting for input...</div>'
-        return empty_flow, empty_clinical, {}, empty_banner
+        return empty_clinical, {}, empty_banner
     
     openai_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
     nvidia_client = OpenAI(base_url="https://integrate.api.nvidia.com/v1", api_key=os.environ.get("NVIDIA_API_KEY", ""))
@@ -74,11 +73,13 @@ Return ONLY valid JSON."""
     checker_response_text = ""
     
     try:
-        if model == "gpt-4o-mini":
-            maker_response_text = call_model(openai_client, model, image_b64, standard_prompt)
-        elif model in ["meta/llama-3.2-90b-vision-instruct", "qwen/qwen3.5-397b-a17b"]:
-            maker_response_text = call_model(nvidia_client, model, image_b64, standard_prompt)
-        elif model == "Multi-Agent: Hybrid (GPT Maker + Qwen Checker)":
+        if model == "OpenAI: GPT-4o-Mini (Fast Screen)":
+            maker_response_text = call_model(openai_client, "gpt-4o-mini", image_b64, standard_prompt)
+        elif model == "Meta: Llama 3.2 Vision (Open Source)":
+            maker_response_text = call_model(nvidia_client, "meta/llama-3.2-90b-vision-instruct", image_b64, standard_prompt)
+        elif model == "Alibaba: Qwen 3.5 VLM (High Fidelity)":
+            maker_response_text = call_model(nvidia_client, "qwen/qwen3.5-397b-a17b", image_b64, standard_prompt)
+        elif model == "Multi-Agent Consensus (OpenAI + Alibaba)":
             is_multi_agent = True
             maker_response_text = call_model(openai_client, "gpt-4o-mini", image_b64, standard_prompt)
             maker_json = extract_json(maker_response_text)
@@ -87,7 +88,7 @@ Return ONLY valid JSON."""
                 maker_coords=json.dumps(maker_json.get("lesion_coordinates", []))
             )
             checker_response_text = call_model(nvidia_client, "qwen/qwen3.5-397b-a17b", image_b64, reviewer_prompt)
-        elif model == "Multi-Agent: Open-Source (Llama Maker + Qwen Checker)":
+        elif model == "Multi-Agent Consensus (Meta + Alibaba)":
             is_multi_agent = True
             maker_response_text = call_model(nvidia_client, "meta/llama-3.2-90b-vision-instruct", image_b64, standard_prompt)
             maker_json = extract_json(maker_response_text)
@@ -106,22 +107,20 @@ Return ONLY valid JSON."""
     confidence_score = final_json.get("confidence_score", "N/A")
     lesion_coordinates = final_json.get("lesion_coordinates", [])
     
-    # 1. Agentic Flow State
-    agentic_flow_html = ""
-    if is_multi_agent:
-        maker_json = extract_json(maker_response_text)
-        maker_grade = str(maker_json.get("predicted_grade", "N/A"))
-        if maker_grade != predicted_grade:
-            agentic_flow_html = f'<div class="agentic-flow override">🟡 Multi-Agent Flow: Reviewer Overrode Maker (Maker: {maker_grade} &rarr; Reviewer: {predicted_grade})</div>'
-        else:
-            agentic_flow_html = f'<div class="agentic-flow">🟢 Multi-Agent Flow: Consensus Reached</div>'
-    else:
-         agentic_flow_html = f'<div class="agentic-flow">🔵 Single-Shot Inference</div>'
+    # Map 0-4 Grade
+    grade_map = {
+        "0": "Healthy (No DR)",
+        "1": "Mild DR",
+        "2": "Moderate DR",
+        "3": "Severe DR",
+        "4": "Proliferative DR"
+    }
+    mapped_grade = grade_map.get(predicted_grade, predicted_grade)
 
     # 2. Clinical Summary HTML
     clinical_summary_html = f"""
     <div class="clinical-findings">
-        <div class="clinical-grade">Predicted Clinical Grade: {predicted_grade}</div>
+        <div class="clinical-grade">Predicted Clinical Grade: {predicted_grade} - {mapped_grade}</div>
         <div class="confidence">Confidence Score: {confidence_score}%</div>
     </div>
     """
@@ -134,13 +133,13 @@ Return ONLY valid JSON."""
     try:
         conf = int(confidence_score)
         if conf >= 85:
-            status_banner_html = '<div class="status-banner approved">🟢 Auto-Triage Approved</div>'
+            status_banner_html = '<div class="status-banner approved">🟢 Routine Queue: AI Consensus Achieved</div>'
         else:
-            status_banner_html = '<div class="status-banner review">🔴 Human-in-the-Loop Review Required</div>'
+            status_banner_html = '<div class="status-banner review">🔴 High Priority: Attending Physician Review Required</div>'
     except:
         status_banner_html = '<div class="status-banner review">🔴 Status Unknown</div>'
 
-    return agentic_flow_html, clinical_summary_html, lesion_dict, status_banner_html
+    return clinical_summary_html, lesion_dict, status_banner_html
 
 css = """
 .status-banner { padding: 15px; border-radius: 8px; font-weight: bold; font-size: 16px; margin-top: 10px; }
@@ -155,38 +154,38 @@ css = """
 
 # Build the Gradio UI
 with gr.Blocks(title="MedVision-Bench Playground", theme=gr.themes.Soft(), css=css) as demo:
-    gr.Markdown("# MedVision-Bench: Single-Image Playground")
-    gr.Markdown("Upload an image and select a model to test the diagnostic pipeline and Human-in-the-Loop confidence routing.")
+    gr.Markdown("# MedVision AI: Clinical Second Opinion Dashboard")
+    gr.Markdown("Upload a patient's Retinal Fundus scan below. The AI will evaluate the image for Diabetic Retinopathy and flag complex cases for physician review.")
     
     with gr.Row():
         with gr.Column():
-            image_input = gr.Image(type="pil", label="Upload Medical Image")
+            image_input = gr.Image(type="pil", label="Patient Retinal Scan (Upload JPEG/PNG)")
             model_dropdown = gr.Dropdown(
                 choices=[
-                    "gpt-4o-mini", 
-                    "meta/llama-3.2-90b-vision-instruct", 
-                    "qwen/qwen3.5-397b-a17b", 
-                    "Multi-Agent: Hybrid (GPT Maker + Qwen Checker)", 
-                    "Multi-Agent: Open-Source (Llama Maker + Qwen Checker)"
+                    "OpenAI: GPT-4o-Mini (Fast Screen)", 
+                    "Meta: Llama 3.2 Vision (Open Source)", 
+                    "Alibaba: Qwen 3.5 VLM (High Fidelity)", 
+                    "Multi-Agent Consensus (OpenAI + Alibaba)", 
+                    "Multi-Agent Consensus (Meta + Alibaba)"
                 ],
-                value="gpt-4o-mini",
-                label="Select Model"
+                value="OpenAI: GPT-4o-Mini (Fast Screen)",
+                label="Select Diagnostic Protocol"
             )
-            submit_btn = gr.Button("Run Inference", variant="primary")
+            submit_btn = gr.Button("Analyze Scan & Generate Second Opinion", variant="primary")
             
         with gr.Column():
             status_banner_output = gr.HTML('<div class="status-banner">⚪ Waiting for input...</div>')
-            agentic_flow_output = gr.HTML('<div class="agentic-flow">⚪ Waiting for input...</div>')
             
             with gr.Group():
                 clinical_output = gr.HTML('<div class="clinical-findings">⚪ Waiting for input...</div>')
-                lesion_output = gr.JSON(label="Raw Extraction: lesion_coordinates", value={})
+                with gr.Accordion("🔍 View AI Spatial Coordinates (Audit Trail)", open=False):
+                    lesion_output = gr.JSON(label="Raw AI Bounding Boxes (Coordinates)", value={})
 
     # Wire up the logic
     submit_btn.click(
         fn=process_image,
         inputs=[image_input, model_dropdown],
-        outputs=[agentic_flow_output, clinical_output, lesion_output, status_banner_output]
+        outputs=[clinical_output, lesion_output, status_banner_output]
     )
 
 if __name__ == "__main__":
