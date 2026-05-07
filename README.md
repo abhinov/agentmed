@@ -1,65 +1,66 @@
 # 🏥 AgentMed: Clinical AI Copilot & Multi-Agent Orchestrator
 
-**AgentMed** is a high-fidelity, fault-tolerant evaluation engine and clinical AI Copilot. It is designed to benchmark and orchestrate frontier Vision-Language Models (VLMs) on complex clinical imagery, acting as a multimodal diagnostic auditor. 
+**AgentMed** is a reliable clinical AI Copilot. It acts as an automated "second opinion" system, testing how well modern AI models analyze complex medical images like retinal scans. 
 
-While standard benchmarks evaluate text-based clinical chat, AgentMed tackles the multimodal equivalent—evaluating spatial explainability, AI hallucination safety, and Multi-Agent consensus on high-stakes medical scans (IDRiD Dataset).
+Instead of relying on a single AI, AgentMed uses a **"Maker-Checker" system**—where multiple AI models debate a diagnosis to ensure accuracy, safety, and cost-efficiency before handing the final decision to a human doctor.
 
 **Live Demo:** [Hugging Face Space](https://huggingface.co/spaces/beabhinov/agentmed)
 
+> **⚠️ Note on the Live Demo:** To make sure you see the AI debate in action, the web demo **forces** the Second-Opinion AI to review every single scan. It also uses a simple, fixed rule to decide if a scan is safe. To see our smart, cost-saving routing in action, check out the main production code (`pipeline.py` and `consensus_engine.py`).
+
 ---
 
-## 🚀 Business Impact & Engineering Value (Why This Matters)
-Standard AI deployments often force a choice between **Cost** (using smaller, cheaper models) and **Accuracy/Safety** (using massive, expensive proprietary models). AgentMed solves this through a dynamic **Multi-Agent Maker-Checker Architecture**.
+## 🚀 Business Impact & Product Value
+Building AI for healthcare usually forces a tough choice: use cheap models that might make mistakes, or use expensive, massive models that cost too much to run at scale. AgentMed solves this.
 
-### 1. Accuracy Uplift via Multi-Agent Consensus
-By enforcing a multi-agent debate on ambiguous scans, the AgentMed pipeline achieves a significant accuracy uplift over single-agent baselines.
-* **Baseline (Single Agent GPT-4o-mini):** 66.59% Accuracy
-* **AgentMed Pipeline (Llama-90B + GPT-4o):** **72.31% Accuracy** (+5.72% absolute uplift)
+### 1. Better Accuracy Through AI Teamwork
+By forcing two different AI models to double-check ambiguous scans, AgentMed is significantly more accurate than using a single AI.
+* **Baseline (Single AI - GPT-4o-mini):** 66.59% Accuracy
+* **AgentMed Pipeline (Two AIs debating):** **72.31% Accuracy** (+5.72% uplift)
 
-### 2. Optimizing Unit Economics (Doing More with Less)
-Despite using a heavy proprietary model (GPT-4o) for second opinions, the overall pipeline is **cheaper** than running a lightweight proprietary model across the entire dataset. 
-* **Baseline Fleet Cost:** $0.29
-* **AgentMed Fleet Cost:** **$0.27**
+### 2. Lowering Costs (Doing More with Less)
+Even though we use a premium, expensive model (GPT-4o) for second opinions, our overall system is **cheaper** than running a standard model across all data. 
+* **Baseline Cost:** $0.29 per scan
+* **AgentMed Cost:** **$0.27 per scan**
 
-**How?** We utilize a powerful open-source model (**Llama-3.2-90B**) as the frontline "Maker" for the bulk of the workload (handling 62.4% of cases autonomously). The expensive proprietary "Checker" (**GPT-4o-mini**) is only invoked strategically when the Maker exhibits low confidence or detects high-risk pathology.
+**How?** We use a powerful, free open-source model (Llama-3.2-90B) to do the heavy lifting on the easiest cases. The expensive premium model (GPT-4o) is only triggered when the first AI is unsure or detects a high-risk disease. 
 
-### 3. Continuous Risk Optimization (Adaptive Thresholds)
-Rather than relying on static, hardcoded rules, AgentMed uses an **Exponential Moving Average (EMA)** to track the open-source model's historical confidence. The system dynamically self-adjusts: if the frontline model shows systemic overconfidence, the routing threshold automatically tightens to protect patient safety. If it proves highly reliable, the threshold relaxes to further drive down API costs.
+### 3. Smart Risk Management (Self-Adjusting Rules)
+Instead of hardcoding rules, AgentMed learns over time. If the frontline AI starts acting overly confident about difficult scans, the system automatically tightens its safety net, forcing more scans to get a second opinion. If the AI proves reliable, the system relaxes the rules to save money.
 
-### 4. Clinical Safety & Human-in-the-Loop Triage
-AgentMed treats Artificial Intelligence like a **Medical Resident**, while the human remains the **Attending Physician**. 
-* **Safe Auto-Triage Rate (62.42%):** Cases where models reached high-confidence consensus.
-* **Human Escalation Rate (37.58%):** Cases resulting in a "Hard Deferral," meaning the AI disagreed or lacked confidence, automatically routing the scan to a human doctor.
+### 4. Keeping Humans in Control
+AgentMed treats AI like a **Medical Resident**, while the human user remains the **Attending Physician**. 
+* **Safe Auto-Triage Rate (62.42%):** Cases where the AIs agreed with high confidence.
+* **Human Escalation Rate (37.58%):** Cases where the AIs disagreed or were unsure. These are flagged as a "Hard Deferral" and immediately sent to a human doctor.
 
 ---
 
 ## 🧠 System Architecture
 
-Our architecture proves that a **Multi-Agent "Maker-Checker" loop** drastically reduces hallucination rates in multimodal tasks. 
+This architecture proves that having AI models check each other's work drastically reduces errors and "hallucinations" in medical tasks. 
 
-1. **The Primary AI (Maker):** Meta's open-weights `Llama-3.2-90B-Vision-Instruct` analyzes the raw scan, providing an initial diagnostic grade and a native confidence score.
-2. **Dynamic Thresholding Engine:** The system parses the Maker's confidence. To ensure resilience against varying model output formats (e.g., raw floats like `0.85` vs. integers like `85`), the pipeline dynamically updates its benchmark threshold (`safe_threshold = 0.8 if conf <= 1.0 else 80`).
-3. **Adaptive Thresholding (`consensus_engine.py`):** Instead of a static hardcoded threshold, the system employs an Exponential Moving Average (EMA) to track the Maker AI's historical confidence baseline. The safety threshold dynamically adapts (`base_threshold + (alpha * EMA)`). If the primary AI exhibits systemic overconfidence over time, the system automatically tightens the threshold, forcing more cases to the Second-Opinion Checker.
-4. **The Second-Opinion AI (Checker):** If the Maker's confidence falls below the dynamic safety threshold, or if high-risk pathology (Grade 3+) is detected, the scan and the Maker's initial hypothesis are routed to `GPT-4o`.
-5. **Consensus Resolution:** * If both models agree with high confidence ➡️ **Green: Safe for Auto-Triage**.
-   * If there is diagnostic discordance or mutual low confidence ➡️ **Red: Hard Deferral to Human**.
+1. **The Primary AI (Maker):** Meta's open-source `Llama-3.2` looks at the scan first, offering a diagnosis and a confidence score (e.g., "I am 85% sure this is Grade 2").
+2. **The Second-Opinion AI (Checker):** If the Maker's confidence is too low, or if it spots a severe disease, the scan is automatically sent to `GPT-4o-mini` for a strict audit.
+3. **Adaptive Safety Net (`consensus_engine.py`):** The system constantly tracks the Maker AI's track record. If the Maker's historical confidence fluctuates, the system dynamically changes the minimum score required to pass without a second opinion. 
+4. **Final Decision:** * If both AIs agree and are highly confident ➡️ **Green: Safe for Auto-Triage**.
+   * If the AIs disagree or are guessing ➡️ **Red: Hard Deferral to a Human Doctor**.
 
 ---
 
 ## 🛠️ Technical Stack & Implementation Details
-* **Frontend:** Streamlit (Optimized for Clinician UI/UX)
-* **LLM Orchestration:** Native OpenAI SDK wrapper handling both OpenAI and NVIDIA NIM (Llama) endpoints seamlessly.
-* **Resiliency Engineering:** Implemented zero-data-loss checkpointing (atomic OS disk writes) and exponential backoff retry logic (via `Tenacity`) to handle network latency and API rate limits during massive batch processing.
-* **Data Pre-processing:** In-memory LANCZOS spatial downsampling via `Pillow` to reduce payload sizes by up to 86% without losing critical biological pathology data (microaneurysms).
+* **Frontend:** Built with Streamlit, optimized to look and feel like a real doctor's dashboard.
+* **Dynamic LLM Orchestration:** A unified API wrapper interfaces seamlessly with both OpenAI (GPT) and NVIDIA (Llama). It utilizes a dynamic Maker-Checker flow that intelligently routes scans to a heavier, secondary AI only when necessary..
+* **Fault-Tolerant Batch Processing:** Built with auto-saving and exponential backoff retry loops. This ensures zero data loss and prevents the pipeline from crashing during network latency or API rate limits.
+* **Smart Image Compression:** Resizes high-resolution biological data in-memory, shrinking file sizes by up to 86% without blurring out tiny, critical details like microaneurysms.
 
 ---
 
 ## 📂 Repository Structure
-* `app.py`: The live Streamlit application featuring the Interactive Triage Terminal and Fleet Observability dashboard.
-* `pipeline.py`: The production-ready batch processing script used to evaluate the IDRiD cohort.
+* `app.py`: The live application featuring the Interactive Patient Triage Terminal and Fleet Observability dashboard.
+* `pipeline.py`: The main processing script used to process large batches of images.
 * `architecture_comparison_report.json`: Telemetry and benchmark data proving the cost/accuracy efficacy of the multi-agent system.
-* `consensus_engine.py`: The mathematical routing engine that calculates Adaptive Safety Thresholds (via EMA) and continuous Consensus Risk Scores.
-* `results_llama_gpt_images.csv`: The raw audit log of AI discordance.
+* `consensus_engine.py`: (Smart Safety Net) The brain behind the AI debate. Instead of fixed rules, it constantly monitors the primary AI's track record. If the primary AI becomes too confident on tricky scans, the system tightens the rules, forcing more cases to get a secondary AI opinion. This self-adjusting safety net guarantees patient safety while optimizing costs.
+* `results_llama_gpt_images.csv`: The raw logs of every time the AIs debated a scan.
 
 ---
 
