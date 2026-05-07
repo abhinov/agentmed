@@ -14,16 +14,14 @@ Instead of relying on a single AI, AgentMed uses a **"Maker-Checker" system**—
 Building AI for healthcare usually forces a tough choice: use cheap models that might make mistakes, or use expensive, massive models that cost too much to run at scale. AgentMed solves this.
 
 ### 1. Better Accuracy Through AI Teamwork
-By forcing two different AI models to double-check ambiguous scans, AgentMed is significantly more accurate than using a single AI.
-* **Baseline (Single AI - GPT-4o-mini):** 66.59% Accuracy
-* **AgentMed Pipeline (Two AIs debating):** **72.31% Accuracy** (+5.72% uplift)
+By forcing two different AI models to double-check ambiguous scans, AgentMed is significantly more accurate than using a single AI on the IDRiD Dataset (455 images evaluated).
+* **Baseline (Single AI - GPT-4o-mini):** 41.98% Accuracy
+* **AgentMed Pipeline (Llama Maker + GPT Checker):** **46.15% Accuracy** (+9.9% relative increase)
 
-### 2. Lowering Costs (Doing More with Less)
-Even though we use a premium, expensive model (GPT-4o) for second opinions, our overall system is **cheaper** than running a standard model across all data. 
-* **Baseline Cost:** $0.29 per scan
-* **AgentMed Cost:** **$0.27 per scan**
-
-**How?** We use a powerful, free open-source model (Llama-3.2-90B) to do the heavy lifting on the easiest cases. The expensive premium model (GPT-4o) is only triggered when the first AI is unsure or detects a high-risk disease. 
+### 2. Optimizing API Unit Economics (Doing More with Less)
+Running multiple heavy AI models on every single image doubles API costs. AgentMed's routing economics solve this by only running the secondary Checker model on ambiguous cases. 
+* By intelligently triaging the scans, the system successfully **caught and fixed 51 diagnostic hallucinations** while only triggering the secondary AI for 37.58% of the workload. 
+* This reduces overall operational costs compared to a forced dual-inference pipeline.
 
 ### 3. Smart Risk Management (Self-Adjusting Rules)
 Instead of hardcoding rules, AgentMed learns over time. If the frontline AI starts acting overly confident about difficult scans, the system automatically tightens its safety net, forcing more scans to get a second opinion. If the AI proves reliable, the system relaxes the rules to save money.
@@ -31,7 +29,7 @@ Instead of hardcoding rules, AgentMed learns over time. If the frontline AI star
 ### 4. Keeping Humans in Control
 AgentMed treats AI like a **Medical Resident**, while the human user remains the **Attending Physician**. 
 * **Safe Auto-Triage Rate (62.42%):** Cases where the AIs agreed with high confidence.
-* **Human Escalation Rate (37.58%):** Cases where the AIs disagreed or were unsure. These are flagged as a "Hard Deferral" and immediately sent to a human doctor.
+* **Human Escalation Rate (37.58%):** Cases where the AIs disagreed or were unsure (171 escalations). These are flagged as a "Hard Deferral" and immediately sent to a human doctor.
 
 ---
 
