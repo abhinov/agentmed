@@ -54,16 +54,19 @@ class OpenAIBatchEvaluator:
             schema_dict = config.get("schema", {})
 
         # 2. Construct the System Prompt
-        system_prompt = f"""You are an expert ophthalmologist diagnosing Diabetic Retinopathy (DR). 
-You must strictly apply the following 0-4 scale:
-- 0 (No DR): Absolutely normal retina. No microaneurysms or hemorrhages.
-- 1 (Mild): Microaneurysms only.
-- 2 (Moderate): More than just microaneurysms, but less than severe. Minor dot-blot hemorrhages.
-- 3 (Severe): Any of the following - >20 intraretinal hemorrhages in each of 4 quadrants, definite venous beading in 2+ quadrants, or prominent IRMA in 1+ quadrants.
-- 4 (Proliferative): One or both of the following - neovascularization or vitreous/preretinal hemorrhage.
+        system_prompt = """You are an expert ophthalmic AI triage system. 
+First, analyze the uploaded image to determine what it is. 
+If the image is NOT a retinal fundus scan or a cornea scan (e.g., an MRI, X-ray, hand, or random object), flag it as invalid and do not attempt an ophthalmic diagnosis.
 
-Do not over-diagnose lighting artifacts as hemorrhages.
-You must respond in strictly valid JSON matching this exact schema: {json.dumps(config['schema'])}."""
+You MUST output your response as pure JSON matching this exact schema:
+{
+    "detected_image_type": "string",
+    "is_valid_ophthalmic_scan": boolean,
+    "diagnosis": "string (If invalid, output 'N/A')",
+    "confidence_score": integer (0-100),
+    "clinical_triage_plan": "string (If invalid, output 'Image rejected.')",
+    "patient_explanation": "string"
+}"""
 
         image_files = [p for p in self.images_dir.glob("*.*") if p.suffix.lower() in ['.png', '.jpg', '.jpeg', '.webp']]
         
@@ -163,9 +166,9 @@ You must respond in strictly valid JSON matching this exact schema: {json.dumps(
                 custom_id = data.get('custom_id', '')
                 image_filename = custom_id.replace('request-', '')
                 
-                prediction = "Error"
-                confidence_score = "0.0"
-                reasoning = "Failed to parse."
+                # Initialize default values
+                result_dict = {}
+                error_msg = ''
                 
                 try:
                     response_content = data['response']['body']['choices'][0]['message']['content']
@@ -178,22 +181,29 @@ You must respond in strictly valid JSON matching this exact schema: {json.dumps(
                         # Fallback if no tags are present (raw JSON)
                         clean_content = response_content.strip()
                     
-                    parsed_json = json.loads(clean_content)
-                    prediction = parsed_json.get('prediction', "Error")
-                    confidence_score = parsed_json.get('confidence_score', "0.0")
-                    reasoning = parsed_json.get('reasoning', "Failed to parse.")
+                    result_dict = json.loads(clean_content)
                     
                 except Exception as e:
                     print(f"Warning: Failed to parse response for {image_filename}. Error: {e}")
+                    error_msg = str(e)
                     
                 results.append({
-                    "image_filename": image_filename,
-                    "prediction": prediction,
-                    "confidence_score": confidence_score,
-                    "reasoning": reasoning
+                    'filename': image_filename,
+                    'detected_image_type': result_dict.get('detected_image_type', 'Unknown'),
+                    'is_valid_ophthalmic_scan': result_dict.get('is_valid_ophthalmic_scan', False),
+                    'diagnosis': result_dict.get('diagnosis', 'Error'),
+                    'confidence_score': result_dict.get('confidence_score', 0),
+                    'clinical_triage_plan': result_dict.get('clinical_triage_plan', 'Failed to generate plan.'),
+                    'patient_explanation': result_dict.get('patient_explanation', 'An error occurred during analysis.'),
+                    'error': error_msg
                 })
                 
-            df = pd.DataFrame(results)
+            fieldnames = [
+                'filename', 'detected_image_type', 'is_valid_ophthalmic_scan', 
+                'diagnosis', 'confidence_score', 'clinical_triage_plan', 
+                'patient_explanation', 'error'
+            ]
+            df = pd.DataFrame(results, columns=fieldnames)
             df.to_csv(self.output_csv, index=False)
             print(f"Results saved to {self.output_csv}")
         elif status in ['failed', 'expired', 'cancelling', 'cancelled']:

@@ -3,8 +3,11 @@
 
 # Large Data & Outputs
 *.csv
+*.json
 *.jsonl
 data/images/
+results/
+reports/
 
 # Python Caches
 __pycache__/

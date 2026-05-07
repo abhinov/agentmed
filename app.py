@@ -1,13 +1,63 @@
-import gradio as gr
+import streamlit as st
+import pandas as pd
 import json
 import os
 import base64
 from io import BytesIO
+from PIL import Image
 from openai import OpenAI
+from tenacity import retry, wait_exponential, stop_after_attempt
 
-def encode_image(image):
+# ==========================================
+# PAGE CONFIGURATION
+# ==========================================
+st.set_page_config(page_title="AgentMed: Clinical AI Gateway", page_icon="🏥", layout="wide")
+
+# ==========================================
+# BACKEND: DATA LOADING
+# ==========================================
+@st.cache_data
+def load_real_fleet_data():
+    csv_path = "results_llama_gpt_images.csv"
+    if not os.path.exists(csv_path): return pd.DataFrame()
+    try:
+        df = pd.read_csv(csv_path)
+        processed = []
+        for _, row in df.iterrows():
+            m_g = row.get('maker_diagnosis', 0)
+            m_c = float(row.get('maker_confidence', 0))
+            
+            c_g = row.get('checker_diagnosis', m_g) if row.get('checker_triggered', False) else m_g
+            c_c = float(row.get('checker_confidence', m_c)) if row.get('checker_triggered', False) else m_c
+
+            safe_threshold = 0.8 if m_c <= 1.0 else 80
+            
+            processed.append({
+                'case_id': row.get('filename', 'Unknown'),
+                'primary_grade': int(m_g), 
+                'primary_conf': m_c,
+                'second_opinion_grade': int(c_g), 
+                'second_opinion_conf': c_c,
+                'diagnostic_discordance': m_g != c_g,
+                'triage_decision': "🟢 Safe for Auto-Triage" if m_g == c_g and m_c > safe_threshold else "🔴 Hard Deferral to Human"
+            })
+        return pd.DataFrame(processed)
+    except Exception as e:
+        st.error(f"Data Load Error: {e}")
+        return pd.DataFrame()
+
+telemetry_df = load_real_fleet_data()
+
+# ==========================================
+# ARCHITECTURE: API ROUTING
+# ==========================================
+def encode_and_compress_image(uploaded_file):
+    """Local pre-processing to ensure data efficiency before API transmission."""
+    image = Image.open(uploaded_file)
+    if image.mode != 'RGB': image = image.convert('RGB')
+    image.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
     buffered = BytesIO()
-    image.save(buffered, format="JPEG")
+    image.save(buffered, format="JPEG", quality=85)
     return base64.b64encode(buffered.getvalue()).decode('utf-8')
 
 def extract_json(text):
@@ -17,176 +67,120 @@ def extract_json(text):
         elif "```" in text:
             text = text.split("```")[1].split("```")[0].strip()
         return json.loads(text)
-    except Exception:
-        return {}
+    except: return {}
 
-def call_model(client, model_name, image_b64, prompt):
+@retry(wait=wait_exponential(multiplier=1, min=2, max=10), stop=stop_after_attempt(3))
+def call_vlm_api(client, model_name, prompt, image_b64):
+    """Resilient API caller with exponential backoff for network stability."""
     response = client.chat.completions.create(
         model=model_name,
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/jpeg;base64,{image_b64}"
-                        }
-                    }
-                ]
-            }
-        ],
-        max_tokens=1000,
-        temperature=0.0
+        messages=[{"role": "user", "content": [
+            {"type": "text", "text": prompt},
+            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}}
+        ]}],
+        max_tokens=1000, temperature=0.0
     )
-    return response.choices[0].message.content
+    return response.choices[0].message.content or "{}"
 
-def process_image(image, model):
-    if image is None:
-        empty_clinical = '<div class="clinical-findings">⚪ Waiting for input...</div>'
-        empty_banner = '<div class="status-banner">⚪ Waiting for input...</div>'
-        return empty_clinical, {}, empty_banner
-    
-    openai_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
-    nvidia_client = OpenAI(base_url="https://integrate.api.nvidia.com/v1", api_key=os.environ.get("NVIDIA_API_KEY", ""))
+# ==========================================
+# FRONTEND UI (CLINICIAN WORKFLOW)
+# ==========================================
+st.title("🏥 AgentMed: Clinical AI Copilot")
+st.markdown("Automated Diabetic Retinopathy screening with multi-agent consensus verification.")
 
-    standard_prompt = """Analyze this retinal image. Output a JSON object with:
-- "predicted_grade": integer (0-4)
-- "confidence_score": integer (0-100)
-- "lesion_coordinates": list of objects with "type", "x_coord", "y_coord", "confidence"
-Return ONLY valid JSON."""
+tab1, tab2, tab3 = st.tabs(["🩺 Patient Triage & Second Opinion", "📊 Clinical Analytics on IDRiD", "🔍 Human Audit Log"])
 
-    reviewer_prompt_template = """You are a Senior Clinical AI Reviewer. A junior model analyzed this retinal image and predicted a clinical grade of {maker_prediction} with these coordinates: {maker_coords}. 
-   Review the image critically. 
-   You MUST return ONLY a valid JSON object with EXACTLY these three keys, no matter what:
-   1. "predicted_grade": Integer strictly from 0 to 4 (0=Healthy, 1=Mild, 2=Moderate, 3=Severe, 4=Proliferative).
-   2. "confidence_score": Integer strictly from 0 to 100 representing your certainty. Do not use decimals.
-   3. "lesion_coordinates": Array of objects. Return [] if none.
-   Do not add any other text, markdown, or keys.
-   """
+with tab1:
+    st.markdown("### Retinal Scan Evaluation")
+    st.info("ℹ️ **Clinical Safety Protocol:** This workflow forces a multi-agent consensus. If the Primary AI and the Second-Opinion AI disagree, the scan is flagged for a **Hard Deferral** to a human ophthalmologist.")
     
-    image_b64 = encode_image(image)
-    
-    is_multi_agent = False
-    maker_response_text = ""
-    checker_response_text = ""
-    
-    try:
-        if model == "OpenAI: GPT-4o-Mini (Fast Screen)":
-            maker_response_text = call_model(openai_client, "gpt-4o-mini", image_b64, standard_prompt)
-        elif model == "Meta: Llama 3.2 Vision (Open Source)":
-            maker_response_text = call_model(nvidia_client, "meta/llama-3.2-90b-vision-instruct", image_b64, standard_prompt)
-        elif model == "Alibaba: Qwen 3.5 VLM (High Fidelity)":
-            maker_response_text = call_model(nvidia_client, "qwen/qwen3.5-397b-a17b", image_b64, standard_prompt)
-        elif model == "Multi-Agent Consensus (OpenAI + Alibaba)":
-            is_multi_agent = True
-            maker_response_text = call_model(openai_client, "gpt-4o-mini", image_b64, standard_prompt)
-            maker_json = extract_json(maker_response_text)
-            reviewer_prompt = reviewer_prompt_template.format(
-                maker_prediction=maker_json.get("predicted_grade", "None"),
-                maker_coords=json.dumps(maker_json.get("lesion_coordinates", []))
-            )
-            checker_response_text = call_model(nvidia_client, "qwen/qwen3.5-397b-a17b", image_b64, reviewer_prompt)
-        elif model == "Multi-Agent Consensus (Meta + Alibaba)":
-            is_multi_agent = True
-            maker_response_text = call_model(nvidia_client, "meta/llama-3.2-90b-vision-instruct", image_b64, standard_prompt)
-            maker_json = extract_json(maker_response_text)
-            reviewer_prompt = reviewer_prompt_template.format(
-                maker_prediction=maker_json.get("predicted_grade", "None"),
-                maker_coords=json.dumps(maker_json.get("lesion_coordinates", []))
-            )
-            checker_response_text = call_model(nvidia_client, "qwen/qwen3.5-397b-a17b", image_b64, reviewer_prompt)
-    except Exception as e:
-        return "Error", "Error", f"### Status: 🔴 Error: {str(e)}", {}
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        uploaded_file = st.file_uploader("Upload Patient Retinal Scan", type=["jpg", "jpeg", "png"])
+        protocol_choice = st.selectbox("Diagnostic Consensus Protocol", [
+            "Primary AI (Llama-90B) + Second Opinion (GPT-4o)",
+            "Single Agent Baseline (GPT-4o-mini)"
+        ])
+        analyze_btn = st.button("Generate Diagnostic Report", type="primary", use_container_width=True)
+
+    with col2:
+        if analyze_btn and uploaded_file:
+            with st.spinner("Executing live multi-agent clinical evaluation..."):
+                try:
+                    b64_img = encode_and_compress_image(uploaded_file)
+                    
+                    # USER: Ensure API keys are set in your environment variables
+                    o_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+                    n_client = OpenAI(base_url="https://integrate.api.nvidia.com/v1", api_key=os.environ.get("NVIDIA_API_KEY"))
+                    
+                    # Enforced JSON structure tailored for clinical outputs
+                    base_prompt = (
+                        'Analyze this retinal image for Diabetic Retinopathy. '
+                        'Output STRICT JSON: "predicted_grade" (int 0-4), "confidence_score" (float 0.0-1.0), '
+                        '"clinical_triage_plan" (string recommendation), "lesion_coordinates" (list).'
+                    )
+                    
+                    if "Baseline" in protocol_choice:
+                        res_text = call_vlm_api(o_client, "gpt-4o-mini", base_prompt, b64_img)
+                        m_dict = extract_json(res_text)
+                        c_dict = m_dict
+                    else:
+                        m_text = call_vlm_api(n_client, "meta/llama-3.2-90b-vision-instruct", base_prompt, b64_img)
+                        m_dict = extract_json(m_text)
+                        
+                        rev_prompt = (
+                            f"A primary AI predicted Grade {m_dict.get('predicted_grade',0)}. "
+                            "Critically audit this scan as a Second-Opinion Consulting Ophthalmologist. "
+                            f"{base_prompt}"
+                        )
+                        c_text = call_vlm_api(o_client, "gpt-4o", rev_prompt, b64_img)
+                        c_dict = extract_json(c_text)
+
+                    def clean_conf(val):
+                        return float(val) if val else 0.0
+
+                    m_g, m_c = m_dict.get("predicted_grade", 0), clean_conf(m_dict.get("confidence_score", 0))
+                    c_g, c_c = c_dict.get("predicted_grade", m_g), clean_conf(c_dict.get("confidence_score", m_c))
+                    triage_plan = c_dict.get("clinical_triage_plan", "No specific clinical recommendation provided. Human review required.")
+
+                    # Triage Logic
+                    safe_threshold = 0.8 if m_c <= 1.0 else 80
+                    is_safe = (m_g == c_g) and (m_c > safe_threshold)
+                    
+                    b_color = "#d4edda" if is_safe else "#f8d7da"
+                    decision_text = "🟢 Safe for Auto-Triage" if is_safe else "🔴 Hard Deferral: Mandates Human Review"
+                    
+                    st.markdown(f'<div style="background:{b_color}; padding:15px; border-radius:8px; text-align:center; font-weight:bold; font-size:18px;">{decision_text}</div>', unsafe_allow_html=True)
+                    st.metric("Consensus Diagnostic Grade", f"Grade {c_g}")
+                    
+                    st.markdown("#### Clinical Recommendation")
+                    st.info(f"🩺 **Next Steps:** {triage_plan}")
+                    
+                    st.write("---")
+                    m1, m2 = st.columns(2)
+                    m1.metric("Primary AI Confidence", f"{m_c:.4g}")
+                    m2.metric("Second-Opinion Confidence", f"{c_c:.4g}")
+                    
+                    with st.expander("🔍 View AI Spatial Coordinates & Raw Audit Trail"):
+                        st.json({"lesion_coordinates": c_dict.get("lesion_coordinates", [])})
+                        st.caption("Coordinates indicate areas of interest (microaneurysms, hemorrhages, exudates) flagged by the Second-Opinion AI.")
+                except Exception as e:
+                    st.error(f"System Error during evaluation: {e}")
+
+with tab2:
+    if not telemetry_df.empty:
+        st.markdown("### Retrospective Cohort Analytics")
+        k1, k2, k3 = st.columns(3)
+        k1.metric("Total Patient Scans Evaluated", len(telemetry_df))
+        k2.metric("Human Escalation Rate", f"{(telemetry_df['diagnostic_discordance'].mean()*100):.1f}%")
+        k3.metric("Auto-Triage Rate", f"{((telemetry_df['triage_decision']=='🟢 Safe for Auto-Triage').mean()*100):.1f}%")
         
-    final_response_text = checker_response_text if is_multi_agent else maker_response_text
-    final_json = extract_json(final_response_text)
-    
-    predicted_grade = str(final_json.get("predicted_grade", "N/A"))
-    confidence_score = final_json.get("confidence_score", "N/A")
-    lesion_coordinates = final_json.get("lesion_coordinates", [])
-    
-    # Map 0-4 Grade
-    grade_map = {
-        "0": "Healthy (No DR)",
-        "1": "Mild DR",
-        "2": "Moderate DR",
-        "3": "Severe DR",
-        "4": "Proliferative DR"
-    }
-    mapped_grade = grade_map.get(predicted_grade, predicted_grade)
+        st.markdown("#### Population Severity Distribution")
+        st.bar_chart(telemetry_df['second_opinion_grade'].value_counts())
 
-    # 2. Clinical Summary HTML
-    clinical_summary_html = f"""
-    <div class="clinical-findings">
-        <div class="clinical-grade">Predicted Clinical Grade: {predicted_grade} - {mapped_grade}</div>
-        <div class="confidence">Confidence Score: {confidence_score}%</div>
-    </div>
-    """
-
-    # 3. Python dictionary for JSON
-    lesion_dict = {"lesion_coordinates": lesion_coordinates}
-
-    # 4. Status Banner
-    status_banner_html = ""
-    try:
-        conf = int(confidence_score)
-        if conf >= 85:
-            status_banner_html = '<div class="status-banner approved">🟢 Routine Queue: AI Consensus Achieved</div>'
-        else:
-            status_banner_html = '<div class="status-banner review">🔴 High Priority: Attending Physician Review Required</div>'
-    except:
-        status_banner_html = '<div class="status-banner review">🔴 Status Unknown</div>'
-
-    return clinical_summary_html, lesion_dict, status_banner_html
-
-css = """
-.status-banner { padding: 15px; border-radius: 8px; font-weight: bold; font-size: 16px; margin-top: 10px; }
-.approved { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
-.review { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
-.clinical-findings { padding: 15px; background-color: #f8f9fa; border-radius: 8px; border: 1px solid #dee2e6; margin-bottom: 10px; }
-.clinical-grade { font-size: 24px; font-weight: bold; color: #007bff; }
-.confidence { font-size: 18px; color: #495057; }
-.agentic-flow { padding: 10px; background-color: #e2e3e5; border-radius: 8px; font-weight: bold; margin-bottom: 15px; }
-.override { background-color: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
-"""
-
-# Build the Gradio UI
-with gr.Blocks(title="MedVision-Bench Playground", theme=gr.themes.Soft(), css=css) as demo:
-    gr.Markdown("# MedVision AI: Clinical Second Opinion Dashboard")
-    gr.Markdown("Upload a patient's Retinal Fundus scan below. The AI will evaluate the image for Diabetic Retinopathy and flag complex cases for physician review.")
-    
-    with gr.Row():
-        with gr.Column():
-            image_input = gr.Image(type="pil", label="Patient Retinal Scan (Upload JPEG/PNG)")
-            model_dropdown = gr.Dropdown(
-                choices=[
-                    "OpenAI: GPT-4o-Mini (Fast Screen)", 
-                    "Meta: Llama 3.2 Vision (Open Source)", 
-                    "Alibaba: Qwen 3.5 VLM (High Fidelity)", 
-                    "Multi-Agent Consensus (OpenAI + Alibaba)", 
-                    "Multi-Agent Consensus (Meta + Alibaba)"
-                ],
-                value="OpenAI: GPT-4o-Mini (Fast Screen)",
-                label="Select Diagnostic Protocol"
-            )
-            submit_btn = gr.Button("Analyze Scan & Generate Second Opinion", variant="primary")
-            
-        with gr.Column():
-            status_banner_output = gr.HTML('<div class="status-banner">⚪ Waiting for input...</div>')
-            
-            with gr.Group():
-                clinical_output = gr.HTML('<div class="clinical-findings">⚪ Waiting for input...</div>')
-                with gr.Accordion("🔍 View AI Spatial Coordinates (Audit Trail)", open=False):
-                    lesion_output = gr.JSON(label="Raw AI Bounding Boxes (Coordinates)", value={})
-
-    # Wire up the logic
-    submit_btn.click(
-        fn=process_image,
-        inputs=[image_input, model_dropdown],
-        outputs=[clinical_output, lesion_output, status_banner_output]
-    )
-
-if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", share=True)
+with tab3:
+    if not telemetry_df.empty:
+        st.markdown("### Audit Log: Multi-Agent Discordance")
+        st.markdown("Displays all cases where the Primary AI and Second-Opinion AI disagreed on the diagnostic grade, triggering a Hard Deferral.")
+        display_df = telemetry_df[telemetry_df['diagnostic_discordance']==True].reset_index(drop=True)
+        st.dataframe(display_df, use_container_width=True)
