@@ -23,7 +23,10 @@ Despite using a heavy proprietary model (GPT-4o) for second opinions, the overal
 
 **How?** We utilize a powerful open-source model (**Llama-3.2-90B**) as the frontline "Maker" for the bulk of the workload (handling 62.4% of cases autonomously). The expensive proprietary "Checker" (**GPT-4o-mini**) is only invoked strategically when the Maker exhibits low confidence or detects high-risk pathology.
 
-### 3. Clinical Safety & Human-in-the-Loop Triage
+### 3. Continuous Risk Optimization (Adaptive Thresholds)
+Rather than relying on static, hardcoded rules, AgentMed uses an **Exponential Moving Average (EMA)** to track the open-source model's historical confidence. The system dynamically self-adjusts: if the frontline model shows systemic overconfidence, the routing threshold automatically tightens to protect patient safety. If it proves highly reliable, the threshold relaxes to further drive down API costs.
+
+### 4. Clinical Safety & Human-in-the-Loop Triage
 AgentMed treats Artificial Intelligence like a **Medical Resident**, while the human remains the **Attending Physician**. 
 * **Safe Auto-Triage Rate (62.42%):** Cases where models reached high-confidence consensus.
 * **Human Escalation Rate (37.58%):** Cases resulting in a "Hard Deferral," meaning the AI disagreed or lacked confidence, automatically routing the scan to a human doctor.
@@ -36,8 +39,9 @@ Our architecture proves that a **Multi-Agent "Maker-Checker" loop** drastically 
 
 1. **The Primary AI (Maker):** Meta's open-weights `Llama-3.2-90B-Vision-Instruct` analyzes the raw scan, providing an initial diagnostic grade and a native confidence score.
 2. **Dynamic Thresholding Engine:** The system parses the Maker's confidence. To ensure resilience against varying model output formats (e.g., raw floats like `0.85` vs. integers like `85`), the pipeline dynamically updates its benchmark threshold (`safe_threshold = 0.8 if conf <= 1.0 else 80`).
-3. **The Second-Opinion AI (Checker):** If the Maker's confidence falls below the dynamic safety threshold, or if high-risk pathology (Grade 3+) is detected, the scan and the Maker's initial hypothesis are routed to `GPT-4o`.
-4. **Consensus Resolution:** * If both models agree with high confidence ➡️ **Green: Safe for Auto-Triage**.
+3. **Adaptive Thresholding (`consensus_engine.py`):** Instead of a static hardcoded threshold, the system employs an Exponential Moving Average (EMA) to track the Maker AI's historical confidence baseline. The safety threshold dynamically adapts (`base_threshold + (alpha * EMA)`). If the primary AI exhibits systemic overconfidence over time, the system automatically tightens the threshold, forcing more cases to the Second-Opinion Checker.
+4. **The Second-Opinion AI (Checker):** If the Maker's confidence falls below the dynamic safety threshold, or if high-risk pathology (Grade 3+) is detected, the scan and the Maker's initial hypothesis are routed to `GPT-4o`.
+5. **Consensus Resolution:** * If both models agree with high confidence ➡️ **Green: Safe for Auto-Triage**.
    * If there is diagnostic discordance or mutual low confidence ➡️ **Red: Hard Deferral to Human**.
 
 ---
@@ -54,6 +58,7 @@ Our architecture proves that a **Multi-Agent "Maker-Checker" loop** drastically 
 * `app.py`: The live Streamlit application featuring the Interactive Triage Terminal and Fleet Observability dashboard.
 * `pipeline.py`: The production-ready batch processing script used to evaluate the IDRiD cohort.
 * `architecture_comparison_report.json`: Telemetry and benchmark data proving the cost/accuracy efficacy of the multi-agent system.
+* `consensus_engine.py`: The mathematical routing engine that calculates Adaptive Safety Thresholds (via EMA) and continuous Consensus Risk Scores.
 * `results_llama_gpt_images.csv`: The raw audit log of AI discordance.
 
 ---
